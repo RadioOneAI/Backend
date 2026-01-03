@@ -1,0 +1,35 @@
+import os
+from dotenv import load_dotenv
+
+# ✅ Load .env immediately (before importing Config)
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(root_dir, ".env"))
+
+from flask import Flask
+from app.config import Config
+from app.extensions import db, migrate, jwt, cors
+from app.routes import register_routes
+from app.models import User
+from app.utils.responses import fail
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(Config)
+
+    cors.init_app(app, resources={r"/api/*": {"origins": "*"}})
+    db.init_app(app)
+    migrate.init_app(app, db)
+    jwt.init_app(app)
+
+    register_routes(app)
+
+    @jwt.user_lookup_loader
+    def user_lookup_callback(_jwt_header, jwt_data):
+        user_id = jwt_data["sub"]
+        return User.query.get(user_id)
+
+    @jwt.user_lookup_error_loader
+    def user_lookup_error(_jwt_header, jwt_data):
+        return fail("User not found.", code=404)
+
+    return app
