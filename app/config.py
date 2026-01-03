@@ -1,11 +1,12 @@
+from datetime import timedelta
 import os
 
 class Config:
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
-    if not SQLALCHEMY_DATABASE_URI:
-        raise RuntimeError("DATABASE_URL is not set. Put it in the project root .env")
-
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret")
+
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)     # e.g., 1 hour
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)     # e.g., 7 days

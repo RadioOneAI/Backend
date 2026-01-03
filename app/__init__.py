@@ -12,6 +12,7 @@ from app.routes import register_routes
 from app.models import User
 from app.utils.responses import fail
 
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -25,7 +26,12 @@ def create_app():
 
     @jwt.user_lookup_loader
     def user_lookup_callback(_jwt_header, jwt_data):
-        user_id = jwt_data["sub"]
+        # ✅ jwt_data["sub"] is now a STRING
+        sub = jwt_data.get("sub")
+        try:
+            user_id = int(sub)
+        except (TypeError, ValueError):
+            return None
         return User.query.get(user_id)
 
     @jwt.user_lookup_error_loader

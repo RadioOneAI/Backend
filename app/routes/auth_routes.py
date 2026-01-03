@@ -1,14 +1,16 @@
-from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, request
 from flask_jwt_extended import (
-    create_access_token, create_refresh_token,
-    jwt_required, get_jwt_identity
+    create_access_token,
+    create_refresh_token,
+    jwt_required,
+    get_jwt_identity
 )
-from app.extensions import db
+
 from app.models import User, AccountStatus
 from app.utils.responses import ok, fail
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+
 
 @auth_bp.post("/login")
 def login():
@@ -32,8 +34,10 @@ def login():
         return fail("Account is inactive. Contact admin.", code=403)
 
     claims = {"role": user.role, "status": user.status}
-    access = create_access_token(identity=user.id, additional_claims=claims)
-    refresh = create_refresh_token(identity=user.id, additional_claims=claims)
+
+    # ✅ IMPORTANT: identity must be a STRING (sub must be string)
+    access = create_access_token(identity=str(user.id), additional_claims=claims)
+    refresh = create_refresh_token(identity=str(user.id), additional_claims=claims)
 
     return ok({
         "access_token": access,
@@ -41,10 +45,18 @@ def login():
         "user": user.to_dict()
     }, "Login success")
 
+
 @auth_bp.post("/refresh")
 @jwt_required(refresh=True)
 def refresh():
-    user_id = get_jwt_identity()
+    # ✅ get_jwt_identity() returns the string we stored
+    user_id_str = get_jwt_identity()
+
+    try:
+        user_id = int(user_id_str)
+    except (TypeError, ValueError):
+        return fail("Invalid token subject.", code=401)
+
     user = User.query.get(user_id)
     if not user:
         return fail("User not found.", code=404)
@@ -52,5 +64,7 @@ def refresh():
         return fail("Account is inactive.", code=403)
 
     claims = {"role": user.role, "status": user.status}
-    access = create_access_token(identity=user.id, additional_claims=claims)
+
+    # ✅ keep identity as string
+    access = create_access_token(identity=str(user.id), additional_claims=claims)
     return ok({"access_token": access}, "Token refreshed")
