@@ -27,3 +27,16 @@ def admin_required(fn):
             return fail("Admin access required.", code=403)
         return fn(*args, **kwargs)
     return wrapper
+
+def admin_or_receptionist_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        verify_jwt_in_request()
+        if not current_user:
+            return fail("Unauthorized", code=401)
+        if current_user.status != AccountStatus.ACTIVE.value:
+            return fail("Account is inactive.", code=403)
+        if current_user.role not in {Role.ADMIN.value, Role.RECEPTIONIST.value}:
+            return fail("Admin or receptionist access required.", code=403)
+        return fn(*args, **kwargs)
+    return wrapper

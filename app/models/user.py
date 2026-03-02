@@ -14,6 +14,7 @@ class Role(str, Enum):
     DOCTOR = "doctor"
     RADIOGRAPHER = "radiographer"
     RADIOLOGIST = "radiologist"
+    PATIENT = "patient"
 
 
 class AccountStatus(str, Enum):
@@ -54,6 +55,9 @@ class User(db.Model):
     def is_admin(self) -> bool:
         return self.role == Role.ADMIN.value
 
+    def is_patient(self) -> bool:
+        return self.role == Role.PATIENT.value
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -70,9 +74,6 @@ class User(db.Model):
         }
 
 
-# ✅ Hard protection at DB/ORM level:
-# - role is never editable
-# - license_number is never editable after set (especially for doctor/radiographer/radiologist)
 @event.listens_for(User, "before_update")
 def prevent_role_or_license_edit(mapper, connection, target: User):
     # role cannot change
@@ -80,7 +81,7 @@ def prevent_role_or_license_edit(mapper, connection, target: User):
     if role_hist.has_changes():
         raise ValueError("Role cannot be updated.")
 
-    # license cannot change once set (if it had an old value)
+    # license cannot change once set
     lic_hist = get_history(target, "license_number")
     if lic_hist.has_changes():
         old = lic_hist.deleted[0] if lic_hist.deleted else None

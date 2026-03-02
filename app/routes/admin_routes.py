@@ -115,7 +115,7 @@ def delete_admin(admin_id: int):
 @admin_required
 def list_staff():
     role = request.args.get("role")
-    q = User.query.filter(User.role != Role.ADMIN.value)
+    q = User.query.filter(User.role != Role.ADMIN.value, User.role != Role.PATIENT.value)
 
     if role:
         role = normalize_role(role)
@@ -169,7 +169,7 @@ def create_staff():
 @admin_bp.patch("/staff/<int:user_id>/status")
 @admin_required
 def update_staff_status(user_id: int):
-    staff = User.query.filter(User.id == user_id, User.role != Role.ADMIN.value).first()
+    staff = User.query.filter(User.id == user_id, User.role != Role.ADMIN.value, User.role != Role.PATIENT.value).first()
     if not staff:
         return fail("Staff member not found.", code=404)
 
@@ -186,7 +186,7 @@ def update_staff_status(user_id: int):
 @admin_bp.delete("/staff/<int:user_id>")
 @admin_required
 def delete_staff(user_id: int):
-    staff = User.query.filter(User.id == user_id, User.role != Role.ADMIN.value).first()
+    staff = User.query.filter(User.id == user_id, User.role != Role.ADMIN.value,User.role != Role.PATIENT.value).first()
     if not staff:
         return fail("Staff member not found.", code=404)
 
