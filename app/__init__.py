@@ -12,6 +12,9 @@ from app.routes import register_routes
 from app.models import User
 from app.utils.responses import fail
 
+# ✅ import CLI command
+from app.commands import create_first_admin
+
 
 def create_app():
     app = Flask(__name__)
@@ -22,11 +25,15 @@ def create_app():
     migrate.init_app(app, db)
     jwt.init_app(app)
 
+    # ✅ register all routes
     register_routes(app)
+
+    # ✅ register CLI command to create first admin
+    app.cli.add_command(create_first_admin)
 
     @jwt.user_lookup_loader
     def user_lookup_callback(_jwt_header, jwt_data):
-        # ✅ jwt_data["sub"] is now a STRING
+        # ✅ jwt_data["sub"] is a STRING
         sub = jwt_data.get("sub")
         try:
             user_id = int(sub)
