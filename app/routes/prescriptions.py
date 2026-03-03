@@ -5,7 +5,7 @@ from flask import Blueprint, request, send_file
 from flask_jwt_extended import current_user
 
 from app.extensions import db
-from app.models import Prescription, PrescriptionImage, Role, User
+from app.models import Prescription, PrescriptionImage, Role, User, PrescriptionStatus
 from app.utils.responses import ok, fail
 from app.utils.decorators import active_required, receptionist_or_radiographer_required
 from app.utils.upload import save_prescription_image, delete_file_if_exists
@@ -66,6 +66,27 @@ def prescription_response(p: Prescription):
         ],
     }
 
+def prescription_summary(p: Prescription):
+    created_by = User.query.get(p.created_by_id) if p.created_by_id else None
+    updated_by = User.query.get(p.updated_by_id) if p.updated_by_id else None
+
+    images_count = PrescriptionImage.query.filter_by(prescription_id=p.id).count()
+
+    return {
+        "id": p.id,
+        "scan_req_id": p.scan_req_id,
+        "doctor_id": p.doctor_id,
+        "patient_id": p.patient_id,
+        "scan_type": p.scan_type,
+        "organ": p.organ,
+        "description": p.description,
+        "status": p.status,
+        "created_at": p.created_at.isoformat(),
+        "updated_at": p.updated_at.isoformat(),
+        "created_by": user_brief(created_by),
+        "updated_by": user_brief(updated_by),
+        "images_count": images_count,
+    }
 
 # -------------------------
 # LIST
@@ -75,11 +96,11 @@ def prescription_response(p: Prescription):
 def list_prescriptions():
     if current_user.role in {Role.RECEPTIONIST.value, Role.RADIOGRAPHER.value}:
         items = Prescription.query.order_by(Prescription.id.desc()).all()
-        return ok([prescription_response(p) for p in items], "Prescriptions list")
+        return ok([prescription_summary(p) for p in items], "Prescriptions list")
 
     if current_user.role == Role.PATIENT.value:
         items = Prescription.query.filter_by(patient_id=current_user.id).order_by(Prescription.id.desc()).all()
-        return ok([prescription_response(p) for p in items], "My prescriptions list")
+        return ok([prescription_summary(p) for p in items], "My prescriptions list")
 
     return fail("Access denied.", code=403)
 
@@ -167,7 +188,7 @@ def create_prescription():
             return fail("Invalid doctor_id.", code=400)
 
     description = (form.get("description") or "").strip() or None
-    status = (form.get("status") or "pending").strip()
+    status = PrescriptionStatus.PENDING.value
 
     p = Prescription(
         scan_req_id=scan_req_id,
@@ -268,7 +289,10 @@ def update_prescription(prescription_id: int):
         p.description = (form.get("description") or "").strip() or None
 
     if "status" in form and form.get("status"):
-        p.status = form.get("status").strip()
+        new_status = form.get("status").strip().lower()
+        if new_status not in {s.value for s in PrescriptionStatus}:
+            return fail("Invalid status. Allowed: pending, scanned, reported.", code=400)
+        p.status = new_status
 
     # ✅ images behavior
     replace_images = (form.get("replace_images") or "").strip().lower() in {"1", "true", "yes"}

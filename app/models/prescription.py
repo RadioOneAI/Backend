@@ -1,5 +1,12 @@
 from datetime import datetime
+from enum import Enum
 from app.extensions import db
+
+
+class PrescriptionStatus(str, Enum):
+    PENDING = "pending"
+    SCANNED = "scanned"
+    REPORTED = "reported"
 
 
 class Prescription(db.Model):
@@ -19,7 +26,7 @@ class Prescription(db.Model):
     organ = db.Column(db.String(80), nullable=False)
     description = db.Column(db.Text, nullable=True)
 
-    status = db.Column(db.String(30), nullable=False, default="pending")
+    status = db.Column(db.String(30), nullable=False, default=PrescriptionStatus.PENDING.value)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
