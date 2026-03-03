@@ -10,3 +10,6 @@ class Config:
 
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)     # e.g., 1 hour
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)     # e.g., 7 days
+
+    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB max upload
