@@ -1,0 +1,37 @@
+from datetime import datetime
+from app.extensions import db
+
+
+class Prescription(db.Model):
+    __tablename__ = "prescriptions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    scan_req_id = db.Column(db.String(50), unique=True, nullable=False)  # sr_000001
+
+    doctor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    scan_type = db.Column(db.String(80), nullable=False)
+    organ = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+
+    status = db.Column(db.String(30), nullable=False, default="pending")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PrescriptionImage(db.Model):
+    __tablename__ = "prescription_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    prescription_id = db.Column(db.Integer, db.ForeignKey("prescriptions.id"), nullable=False)
+
+    file_path = db.Column(db.String(255), nullable=False)  # uploads/prescriptions/<uuid>.png
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
