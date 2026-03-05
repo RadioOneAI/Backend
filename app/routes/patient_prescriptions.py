@@ -19,6 +19,23 @@ patient_prescriptions_bp = Blueprint(
 
 SCAN_REQ_ID_RE = re.compile(r"^sr_\d{6}$")
 
+def generate_next_scan_req_id() -> str:
+    """
+    Generates next scan request id like: sr_000001, sr_000002 ...
+    Uses latest row in DB. Safe because scan_req_id is UNIQUE (retry on collision).
+    """
+    last = Prescription.query.order_by(Prescription.id.desc()).first()
+    if not last or not last.scan_req_id:
+        return "sr_000001"
+
+    # if older values exist but format not matching, still fallback
+    m = re.match(r"^sr_(\d{6})$", last.scan_req_id)
+    if not m:
+        return "sr_000001"
+
+    n = int(m.group(1)) + 1
+    return f"sr_{n:06d}"
+
 # -------------------------
 # LIST UNDER PATIENT
 # -------------------------
@@ -30,7 +47,6 @@ def list_patient_prescriptions(patient_id: int):
     if not patient or patient.role != Role.PATIENT.value:
         return fail("Patient not found.", code=404)
 
-    # receptionist & radiographer → any patient
     if current_user.role in {Role.RECEPTIONIST.value, Role.RADIOGRAPHER.value}:
         items = Prescription.query.filter_by(patient_id=patient_id)\
             .order_by(Prescription.id.desc()).all()
@@ -38,7 +54,6 @@ def list_patient_prescriptions(patient_id: int):
         return ok([prescription_summary(p) for p in items],
                   "Patient prescriptions list")
 
-    # patient → only their own
     if current_user.role == Role.PATIENT.value:
         if current_user.id != patient_id:
             return fail("Access denied.", code=403)
@@ -60,24 +75,18 @@ def create_patient_prescription(patient_id: int):
 
     form = request.form
 
-    scan_req_id = (form.get("scan_req_id") or "").strip()
     scan_type = (form.get("scan_type") or "").strip()
     organ = (form.get("organ") or "").strip()
 
-    if not scan_req_id or not scan_type or not organ:
-        return fail("scan_req_id, scan_type, organ are required.", code=400)
-
-    if not SCAN_REQ_ID_RE.match(scan_req_id):
-        return fail("scan_req_id must match format sr_000001.", code=400)
+    if not scan_type or not organ:
+        return fail("scan_type and organ are required.", code=400)
 
     patient = User.query.get(patient_id)
     if not patient or patient.role != Role.PATIENT.value:
         return fail("Invalid patient.", code=400)
 
-    # optional doctor
     doctor_id = form.get("doctor_id")
     doctor_id_int = None
-
     if doctor_id:
         try:
             doctor_id_int = int(doctor_id)
@@ -90,54 +99,57 @@ def create_patient_prescription(patient_id: int):
 
     description = (form.get("description") or "").strip() or None
 
-    p = Prescription(
-        scan_req_id=scan_req_id,
-        doctor_id=doctor_id_int,
-        patient_id=patient_id,
-        scan_type=scan_type,
-        organ=organ,
-        description=description,
-        status=PrescriptionStatus.PENDING.value,
-        created_by_id=current_user.id
-    )
-
-    try:
-        db.session.add(p)
-        db.session.flush()
-    except IntegrityError:
-        db.session.rollback()
-        return fail("scan_req_id already exists.", code=409)
-
     files = request.files.getlist("prescription_images")
     saved_paths = []
 
-    try:
-        for f in files:
-            if not f or not f.filename:
-                continue
+    for _ in range(5):
+        scan_req_id = generate_next_scan_req_id()
 
-            path = save_prescription_image(f, "uploads")
-            saved_paths.append(path)
+        p = Prescription(
+            scan_req_id=scan_req_id,
+            doctor_id=doctor_id_int,
+            patient_id=patient_id,
+            scan_type=scan_type,
+            organ=organ,
+            description=description,
+            status=PrescriptionStatus.PENDING.value,
+            created_by_id=current_user.id
+        )
 
-            db.session.add(PrescriptionImage(
-                prescription_id=p.id,
-                file_path=path,
-                uploaded_by_id=current_user.id
-            ))
+        try:
+            db.session.add(p)
+            db.session.flush()
 
-        db.session.commit()
+            for f in files:
+                if not f or not f.filename:
+                    continue
 
-    except ValueError as e:
-        db.session.rollback()
-        for path in saved_paths:
-            delete_file_if_exists(path)
-        return fail(str(e), code=400)
+                path = save_prescription_image(f, "uploads")
+                saved_paths.append(path)
 
-    except Exception:
-        db.session.rollback()
-        for path in saved_paths:
-            delete_file_if_exists(path)
-        return fail("Failed to create prescription.", code=500)
+                db.session.add(PrescriptionImage(
+                    prescription_id=p.id,
+                    file_path=path,
+                    uploaded_by_id=current_user.id
+                ))
 
-    return ok(prescription_response(p), "Prescription created", 201)
+            db.session.commit()
+            return ok(prescription_response(p), "Prescription created", 201)
 
+        except IntegrityError:
+            db.session.rollback()
+            continue
+
+        except ValueError as e:
+            db.session.rollback()
+            for path in saved_paths:
+                delete_file_if_exists(path)
+            return fail(str(e), code=400)
+
+        except Exception:
+            db.session.rollback()
+            for path in saved_paths:
+                delete_file_if_exists(path)
+            return fail("Failed to create prescription.", code=500)
+
+    return fail("Failed to generate unique scan_req_id. Try again.", code=500)
