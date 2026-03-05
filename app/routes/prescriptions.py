@@ -7,7 +7,7 @@ from flask_jwt_extended import current_user
 from app.extensions import db
 from app.models import Prescription, PrescriptionImage, Role, User, PrescriptionStatus
 from app.utils.responses import ok, fail
-from app.utils.decorators import active_required, receptionist_or_radiographer_required
+from app.utils.decorators import active_required, receptionist_or_radiographer_required, admin_required
 from app.utils.upload import save_prescription_image, delete_file_if_exists
 
 prescriptions_bp = Blueprint("prescriptions", __name__, url_prefix="/api/prescriptions")
@@ -336,3 +336,26 @@ def update_prescription(prescription_id: int):
         return fail("Failed to update prescription.", code=500)
 
     return ok(prescription_response(p), "Prescription updated")
+
+# -------------------------
+# DELETE (Admin Only)
+# -------------------------
+@prescriptions_bp.delete("/<int:prescription_id>")
+@admin_required
+def delete_prescription(prescription_id: int):
+
+    p = Prescription.query.get(prescription_id)
+
+    if not p:
+        return fail("Prescription not found.", code=404)
+
+    imgs = PrescriptionImage.query.filter_by(prescription_id=p.id).all()
+
+    for im in imgs:
+        delete_file_if_exists(im.file_path)
+        db.session.delete(im)
+
+    db.session.delete(p)
+    db.session.commit()
+
+    return ok(None, "Prescription deleted")
