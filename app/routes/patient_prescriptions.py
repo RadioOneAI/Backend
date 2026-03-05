@@ -4,9 +4,9 @@ from flask import Blueprint, request
 from flask_jwt_extended import current_user
 
 from app.extensions import db
-from app.models import Prescription, PrescriptionImage, User, Role, PrescriptionStatus
+from app.models import Prescription, PrescriptionImage, User, Role, PrescriptionStatus, AccountStatus
 from app.utils.responses import ok, fail
-from app.utils.decorators import active_required, receptionist_or_radiographer_required
+from app.utils.decorators import active_required, receptionist_or_radiographer_required, admin_or_receptionist_required
 from app.utils.upload import save_prescription_image, delete_file_if_exists
 
 from .prescriptions import prescription_response, prescription_summary
@@ -153,3 +153,26 @@ def create_patient_prescription(patient_id: int):
             return fail("Failed to create prescription.", code=500)
 
     return fail("Failed to generate unique scan_req_id. Try again.", code=500)
+
+# -------------------------
+# ACTIVE DOCTORS LIST (dropdown)
+# access: admin + receptionist
+# -------------------------
+@patient_prescriptions_bp.get("/doctors/active")
+@admin_or_receptionist_required
+def list_active_doctors_dropdown():
+    doctors = User.query.filter(
+        User.role == Role.DOCTOR.value,
+        User.status == AccountStatus.ACTIVE.value
+    ).order_by(User.name.asc()).all()
+
+    data = [
+        {
+            "id": d.id,
+            "name": d.name,
+            "license_number": d.license_number
+        }
+        for d in doctors
+    ]
+
+    return ok(data, "Active doctors list")
