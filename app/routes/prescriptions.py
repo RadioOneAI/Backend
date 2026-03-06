@@ -91,6 +91,7 @@ def prescription_response(p: Prescription):
     created_by = User.query.get(p.created_by_id) if p.created_by_id else None
     updated_by = User.query.get(p.updated_by_id) if p.updated_by_id else None
     doctor = User.query.get(p.doctor_id) if p.doctor_id else None
+    radiologist = User.query.get(p.radiologist_id) if p.radiologist_id else None
     patient = User.query.get(p.patient_id) if p.patient_id else None
 
     imgs = PrescriptionImage.query.filter_by(
@@ -100,18 +101,26 @@ def prescription_response(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
+
+        "radiologist_id": p.radiologist_id,
+        "radiologist": user_brief(radiologist),
+
         "patient_id": p.patient_id,
         "patient": patient_brief(patient),
+
         "scan_type": p.scan_type,
         "organ": p.organ,
         "description": p.description,
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "updated_at": p.updated_at.isoformat(),
+
         "created_by": user_brief(created_by),
         "updated_by": user_brief(updated_by),
+
         "images": [
             {
                 "id": im.id,
@@ -129,6 +138,7 @@ def prescription_summary(p: Prescription):
     created_by = User.query.get(p.created_by_id) if p.created_by_id else None
     updated_by = User.query.get(p.updated_by_id) if p.updated_by_id else None
     doctor = User.query.get(p.doctor_id) if p.doctor_id else None
+    radiologist = User.query.get(p.radiologist_id) if p.radiologist_id else None
     patient = User.query.get(p.patient_id) if p.patient_id else None
 
     images_count = PrescriptionImage.query.filter_by(
@@ -138,18 +148,26 @@ def prescription_summary(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
+
+        "radiologist_id": p.radiologist_id,
+        "radiologist": user_brief(radiologist),
+
         "patient_id": p.patient_id,
         "patient": patient_brief(patient),
+
         "scan_type": p.scan_type,
         "organ": p.organ,
         "description": p.description,
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "updated_at": p.updated_at.isoformat(),
+
         "created_by": user_brief(created_by),
         "updated_by": user_brief(updated_by),
+
         "images_count": images_count,
     }
 
@@ -267,6 +285,18 @@ def create_patient_prescription(patient_id: int):
         if not doctor or doctor.role != Role.DOCTOR.value:
             return fail("Invalid doctor_id.", code=400)
 
+    radiologist_id = form.get("radiologist_id")
+    radiologist_id_int = None
+    if radiologist_id:
+        try:
+            radiologist_id_int = int(radiologist_id)
+        except ValueError:
+            return fail("radiologist_id must be an integer.", code=400)
+
+        radiologist = User.query.get(radiologist_id_int)
+        if not radiologist or radiologist.role != Role.RADIOLOGIST.value:
+            return fail("Invalid radiologist_id.", code=400)
+
     description = (form.get("description") or "").strip() or None
     files = request.files.getlist("prescription_images")
     saved_paths = []
@@ -278,6 +308,7 @@ def create_patient_prescription(patient_id: int):
             scan_req_id=scan_req_id,
             doctor_id=doctor_id_int,
             patient_id=patient_id,
+            radiologist_id=radiologist_id_int,
             scan_type=scan_type,
             organ=organ,
             description=description,
@@ -428,6 +459,22 @@ def update_prescription(prescription_id: int):
             if not doctor or doctor.role != Role.DOCTOR.value:
                 return fail("Invalid doctor_id.", code=400)
             p.doctor_id = did
+
+    if "radiologist_id" in form:
+        rad_val = (form.get("radiologist_id") or "").strip()
+        if rad_val == "":
+            p.radiologist_id = None
+        else:
+            try:
+                rid = int(rad_val)
+            except ValueError:
+                return fail("radiologist_id must be an integer.", code=400)
+
+            radiologist = User.query.get(rid)
+            if not radiologist or radiologist.role != Role.RADIOLOGIST.value:
+                return fail("Invalid radiologist_id.", code=400)
+
+            p.radiologist_id = rid
 
     if "scan_type" in form and form.get("scan_type"):
         p.scan_type = form.get("scan_type").strip()

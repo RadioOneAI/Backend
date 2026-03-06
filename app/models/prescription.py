@@ -13,10 +13,10 @@ class Prescription(db.Model):
     __tablename__ = "prescriptions"
 
     id = db.Column(db.Integer, primary_key=True)
-
-    scan_req_id = db.Column(db.String(50), unique=True, nullable=False)  # sr_000001
+    scan_req_id = db.Column(db.String(50), unique=True, nullable=False)
 
     doctor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    radiologist_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     patient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
 
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
