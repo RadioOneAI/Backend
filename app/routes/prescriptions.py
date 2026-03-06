@@ -379,6 +379,29 @@ def list_active_doctors_dropdown():
 
     return ok(data, "Active doctors list")
 
+# -------------------------
+# ACTIVE RADIOLOGISTS LIST
+# access: admin + receptionist
+# -------------------------
+@prescriptions_bp.get("/api/patients/radiologists/active")
+@admin_or_receptionist_required
+def list_active_radiologists_dropdown():
+    radiologists = User.query.filter(
+        User.role == Role.RADIOLOGIST.value,
+        User.status == AccountStatus.ACTIVE.value
+    ).order_by(User.name.asc()).all()
+
+    data = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "license_number": r.license_number
+        }
+        for r in radiologists
+    ]
+
+    return ok(data, "Active radiologists list")
+
 
 # -------------------------
 # GET BY ID
