@@ -28,6 +28,14 @@ class Report(db.Model):
 
     status = db.Column(db.String(30), nullable=False, default=ReportStatus.PENDING.value)
 
+    images = db.relationship(
+        "ReportImage",
+        backref="report",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy=True,
+    )
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -36,6 +44,6 @@ class ReportImage(db.Model):
     __tablename__ = "report_images"
 
     id = db.Column(db.Integer, primary_key=True)
-    report_id = db.Column(db.Integer, db.ForeignKey("reports.id"), nullable=False)
+    report_id = db.Column(db.Integer, db.ForeignKey("reports.id"), db.ForeignKey("reports.id", ondelete="CASCADE"), nullable=False)
     file_path = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
