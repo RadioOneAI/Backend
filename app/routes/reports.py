@@ -7,6 +7,7 @@ from app.models import (
     Report,
     ReportImage,
     ReportStatus,
+    ReportFeedback,
     Prescription,
     PrescriptionStatus,
     ScannedImage,
@@ -73,6 +74,7 @@ def report_response(r: Report):
     radiologist = User.query.get(r.radiologist_id) if r.radiologist_id else None
 
     imgs = ReportImage.query.filter_by(report_id=r.id).order_by(ReportImage.id.asc()).all()
+    feedbacks = ReportFeedback.query.filter_by(report_id=r.id).order_by(ReportFeedback.id.asc()).all()
 
     return {
         "id": r.id,
@@ -107,8 +109,48 @@ def report_response(r: Report):
             }
             for img in imgs
         ],
+
+        "feedbacks": [
+            feedback_response(f)
+            for f in feedbacks
+        ],
     }
 
+def feedback_response(f: ReportFeedback):
+    u = f.user
+    return {
+        "id": f.id,
+        "report_id": f.report_id,
+        "user_id": f.user_id,
+        "user_name": u.name if u else None,
+        "user_role": u.role if u else None,
+        "message": f.message,
+        "created_at": f.created_at.isoformat(),
+        "updated_at": f.updated_at.isoformat(),
+    }
+
+def can_add_feedback(report: Report) -> bool:
+    if not report:
+        return False
+
+    prescription = Prescription.query.get(report.prescription_id) if report.prescription_id else None
+
+    if current_user.role == Role.PATIENT.value:
+        return report.patient_id == current_user.id
+
+    if current_user.role == Role.DOCTOR.value:
+        return report.doctor_id == current_user.id
+
+    if current_user.role == Role.RADIOGRAPHER.value:
+        return report.radiographer_id == current_user.id
+
+    if current_user.role == Role.RADIOLOGIST.value:
+        return (
+            report.radiologist_id == current_user.id or
+            (prescription and prescription.radiologist_id == current_user.id)
+        )
+
+    return False
 
 # -------------------------
 # CREATE REPORT
@@ -369,3 +411,110 @@ def delete_report(report_id: int):
     db.session.commit()
 
     return ok(None, "Report deleted")
+
+# -------------------------
+# ADD REPORT FEEDBACK
+# patient / doctor / radiographer / radiologist
+# according to connected report
+# -------------------------
+@reports_bp.post("/<int:report_id>/feedbacks")
+@active_required
+def add_report_feedback(report_id: int):
+    report = Report.query.get(report_id)
+    if not report:
+        return fail("Report not found.", code=404)
+
+    if not can_add_feedback(report):
+        return fail("Access denied.", code=403)
+
+    data = request.get_json() or {}
+    message = (data.get("message") or "").strip()
+
+    if not message:
+        return fail("message is required.", code=400)
+
+    feedback = ReportFeedback(
+        report_id=report.id,
+        user_id=current_user.id,
+        message=message,
+    )
+
+    db.session.add(feedback)
+    db.session.commit()
+
+    return ok(feedback_response(feedback), "Feedback added", 201)
+
+
+# -------------------------
+# LIST REPORT FEEDBACKS
+# -------------------------
+@reports_bp.get("/<int:report_id>/feedbacks")
+@active_required
+def list_report_feedbacks(report_id: int):
+    report = Report.query.get(report_id)
+    if not report:
+        return fail("Report not found.", code=404)
+
+    if not can_add_feedback(report) and not can_view_report(report):
+        return fail("Access denied.", code=403)
+
+    items = ReportFeedback.query.filter_by(report_id=report.id).order_by(ReportFeedback.id.asc()).all()
+    return ok([feedback_response(f) for f in items], "Report feedbacks")
+
+
+# -------------------------
+# UPDATE OWN FEEDBACK
+# -------------------------
+@reports_bp.patch("/<int:report_id>/feedbacks/<int:feedback_id>")
+@active_required
+def update_report_feedback(report_id: int, feedback_id: int):
+    report = Report.query.get(report_id)
+    if not report:
+        return fail("Report not found.", code=404)
+
+    feedback = ReportFeedback.query.filter_by(
+        id=feedback_id,
+        report_id=report_id
+    ).first()
+    if not feedback:
+        return fail("Feedback not found.", code=404)
+
+    if feedback.user_id != current_user.id:
+        return fail("You can update only your own feedback.", code=403)
+
+    data = request.get_json() or {}
+    message = (data.get("message") or "").strip()
+
+    if not message:
+        return fail("message is required.", code=400)
+
+    feedback.message = message
+    db.session.commit()
+
+    return ok(feedback_response(feedback), "Feedback updated")
+
+
+# -------------------------
+# DELETE OWN FEEDBACK
+# -------------------------
+@reports_bp.delete("/<int:report_id>/feedbacks/<int:feedback_id>")
+@active_required
+def delete_report_feedback(report_id: int, feedback_id: int):
+    report = Report.query.get(report_id)
+    if not report:
+        return fail("Report not found.", code=404)
+
+    feedback = ReportFeedback.query.filter_by(
+        id=feedback_id,
+        report_id=report_id
+    ).first()
+    if not feedback:
+        return fail("Feedback not found.", code=404)
+
+    if feedback.user_id != current_user.id:
+        return fail("You can delete only your own feedback.", code=403)
+
+    db.session.delete(feedback)
+    db.session.commit()
+
+    return ok(None, "Feedback deleted")
