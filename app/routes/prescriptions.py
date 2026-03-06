@@ -22,10 +22,19 @@ def user_brief(u: User | None):
 
 
 def can_view_prescription(p: Prescription) -> bool:
-    if current_user.role in {Role.RECEPTIONIST.value, Role.RADIOGRAPHER.value}:
+    if current_user.role in {
+        Role.RECEPTIONIST.value,
+        Role.RADIOGRAPHER.value,
+        Role.RADIOLOGIST.value,
+    }:
         return True
+
+    if current_user.role == Role.DOCTOR.value and p.doctor_id == current_user.id:
+        return True
+
     if current_user.role == Role.PATIENT.value and p.patient_id == current_user.id:
         return True
+
     return False
 
 
@@ -89,17 +98,46 @@ def prescription_summary(p: Prescription):
     }
 
 # -------------------------
-# LIST
+# Global Prescription List
 # -------------------------
 @prescriptions_bp.get("")
 @active_required
 def list_prescriptions():
-    if current_user.role in {Role.RECEPTIONIST.value, Role.RADIOGRAPHER.value}:
-        items = Prescription.query.order_by(Prescription.id.desc()).all()
+    q = Prescription.query
+
+    doctor_id = request.args.get("doctor_id", type=int)
+    patient_id = request.args.get("patient_id", type=int)
+
+    # radiographer / radiologist -> all, optional filters
+    if current_user.role in {Role.RADIOGRAPHER.value, Role.RADIOLOGIST.value}:
+        if doctor_id:
+            q = q.filter(Prescription.doctor_id == doctor_id)
+        if patient_id:
+            q = q.filter(Prescription.patient_id == patient_id)
+
+        items = q.order_by(Prescription.id.desc()).all()
         return ok([prescription_summary(p) for p in items], "Prescriptions list")
 
+    # receptionist -> all without advanced cross-role filtering if you want
+    if current_user.role == Role.RECEPTIONIST.value:
+        if patient_id:
+            q = q.filter(Prescription.patient_id == patient_id)
+        items = q.order_by(Prescription.id.desc()).all()
+        return ok([prescription_summary(p) for p in items], "Prescriptions list")
+
+    # doctor -> only own prescriptions, optional patient filter
+    if current_user.role == Role.DOCTOR.value:
+        q = q.filter(Prescription.doctor_id == current_user.id)
+        if patient_id:
+            q = q.filter(Prescription.patient_id == patient_id)
+
+        items = q.order_by(Prescription.id.desc()).all()
+        return ok([prescription_summary(p) for p in items], "My prescriptions list")
+
+    # patient -> only own
     if current_user.role == Role.PATIENT.value:
-        items = Prescription.query.filter_by(patient_id=current_user.id).order_by(Prescription.id.desc()).all()
+        q = q.filter(Prescription.patient_id == current_user.id)
+        items = q.order_by(Prescription.id.desc()).all()
         return ok([prescription_summary(p) for p in items], "My prescriptions list")
 
     return fail("Access denied.", code=403)

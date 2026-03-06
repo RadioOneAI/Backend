@@ -42,17 +42,27 @@ def generate_next_scan_req_id() -> str:
 @patient_prescriptions_bp.get("/<int:patient_id>/prescriptions")
 @active_required
 def list_patient_prescriptions(patient_id: int):
-
     patient = User.query.get(patient_id)
     if not patient or patient.role != Role.PATIENT.value:
         return fail("Patient not found.", code=404)
 
-    if current_user.role in {Role.RECEPTIONIST.value, Role.RADIOGRAPHER.value}:
+    if current_user.role in {
+        Role.RECEPTIONIST.value,
+        Role.RADIOGRAPHER.value,
+        Role.RADIOLOGIST.value,
+    }:
         items = Prescription.query.filter_by(patient_id=patient_id)\
             .order_by(Prescription.id.desc()).all()
 
-        return ok([prescription_summary(p) for p in items],
-                  "Patient prescriptions list")
+        return ok([prescription_summary(p) for p in items], "Patient prescriptions list")
+
+    if current_user.role == Role.DOCTOR.value:
+        items = Prescription.query.filter_by(
+            patient_id=patient_id,
+            doctor_id=current_user.id
+        ).order_by(Prescription.id.desc()).all()
+
+        return ok([prescription_summary(p) for p in items], "Doctor patient prescriptions list")
 
     if current_user.role == Role.PATIENT.value:
         if current_user.id != patient_id:
@@ -61,8 +71,7 @@ def list_patient_prescriptions(patient_id: int):
         items = Prescription.query.filter_by(patient_id=current_user.id)\
             .order_by(Prescription.id.desc()).all()
 
-        return ok([prescription_summary(p) for p in items],
-                  "My prescriptions list")
+        return ok([prescription_summary(p) for p in items], "My prescriptions list")
 
     return fail("Access denied.", code=403)
 
