@@ -141,7 +141,7 @@ def upload_scanned_images(prescription_id: int):
                 scan_req_id=prescription.scan_req_id,
                 radiographer_id=current_user.id,
                 file_path=path,
-                status=ScanImageStatus.PENDING.value,
+                status=ScanImageStatus.SCANNED.value,
             )
             db.session.add(item)
             created_items.append(item)

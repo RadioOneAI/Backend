@@ -68,3 +68,17 @@ def radiographer_required(fn):
             return fail("Radiographer access required.", code=403)
         return fn(*args, **kwargs)
     return wrapper
+
+def radiologist_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        verify_jwt_in_request()
+        if not current_user:
+            return fail("Unauthorized", code=401)
+        if current_user.status != AccountStatus.ACTIVE.value:
+            return fail("Account is inactive. Contact admin.", code=403)
+        if current_user.role != Role.RADIOLOGIST.value:
+            return fail("Radiologist access required.", code=403)
+        return fn(*args, **kwargs)
+    return wrapper
+

@@ -6,6 +6,8 @@ from app.extensions import db
 
 class ScanImageStatus(str, Enum):
     PENDING = "pending"
+    SCANNED = "scanned"
+    REPORTED = "reported"
 
 
 class ScannedImage(db.Model):
