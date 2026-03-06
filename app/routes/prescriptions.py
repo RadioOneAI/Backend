@@ -18,8 +18,27 @@ SCAN_REQ_ID_RE = re.compile(r"^sr_\d{6}$")  # sr_000001
 def user_brief(u: User | None):
     if not u:
         return None
-    return {"id": u.id, "name": u.name, "role": u.role, "username": u.username}
+    return {
+        "id": u.id,
+        "name": u.name,
+        "role": u.role,
+        "username": u.username,
+    }
 
+
+def patient_brief(u: User | None):
+    if not u:
+        return None
+    return {
+        "id": u.id,
+        "name": u.name,
+        "username": u.username,
+        "email": u.email,
+        "phone": u.phone,
+        "gender": u.gender,
+        "date_of_birth": u.date_of_birth.isoformat() if u.date_of_birth else None,
+        "age": u.age,
+    }
 
 def can_view_prescription(p: Prescription) -> bool:
     if current_user.role in {
@@ -45,24 +64,33 @@ def image_url(img: PrescriptionImage):
 def prescription_response(p: Prescription):
     created_by = User.query.get(p.created_by_id) if p.created_by_id else None
     updated_by = User.query.get(p.updated_by_id) if p.updated_by_id else None
+    doctor = User.query.get(p.doctor_id) if p.doctor_id else None
+    patient = User.query.get(p.patient_id) if p.patient_id else None
 
-    imgs = PrescriptionImage.query.filter_by(prescription_id=p.id).order_by(PrescriptionImage.id.asc()).all()
+    imgs = PrescriptionImage.query.filter_by(
+        prescription_id=p.id
+    ).order_by(PrescriptionImage.id.asc()).all()
 
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+
         "doctor_id": p.doctor_id,
+        "doctor": user_brief(doctor),
+
         "patient_id": p.patient_id,
+        "patient": patient_brief(patient),
+
         "scan_type": p.scan_type,
         "organ": p.organ,
         "description": p.description,
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "updated_at": p.updated_at.isoformat(),
+
         "created_by": user_brief(created_by),
         "updated_by": user_brief(updated_by),
 
-        # ✅ multiple images
         "images": [
             {
                 "id": im.id,
@@ -78,22 +106,33 @@ def prescription_response(p: Prescription):
 def prescription_summary(p: Prescription):
     created_by = User.query.get(p.created_by_id) if p.created_by_id else None
     updated_by = User.query.get(p.updated_by_id) if p.updated_by_id else None
+    doctor = User.query.get(p.doctor_id) if p.doctor_id else None
+    patient = User.query.get(p.patient_id) if p.patient_id else None
 
-    images_count = PrescriptionImage.query.filter_by(prescription_id=p.id).count()
+    images_count = PrescriptionImage.query.filter_by(
+        prescription_id=p.id
+    ).count()
 
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+
         "doctor_id": p.doctor_id,
+        "doctor": user_brief(doctor),
+
         "patient_id": p.patient_id,
+        "patient": patient_brief(patient),
+
         "scan_type": p.scan_type,
         "organ": p.organ,
         "description": p.description,
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "updated_at": p.updated_at.isoformat(),
+
         "created_by": user_brief(created_by),
         "updated_by": user_brief(updated_by),
+
         "images_count": images_count,
     }
 
