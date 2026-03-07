@@ -202,10 +202,6 @@ def create_report():
     if existing:
         return fail("Report already exists for this prescription.", code=409)
 
-    scanned_images = ScannedImage.query.filter_by(prescription_id=prescription_id).all()
-    if not scanned_images:
-        return fail("Scanned images are required before creating a report.", code=400)
-
     patient_id = data.get("patient_id")
     radiographer_id = data.get("radiographer_id")
 
@@ -251,10 +247,7 @@ def create_report():
 
     try:
         db.session.add(report)
-
-        # once report exists, prescription becomes reported
         prescription.status = PrescriptionStatus.REPORTED.value
-
         db.session.commit()
 
     except Exception as e:
