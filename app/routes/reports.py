@@ -1,4 +1,6 @@
 import os
+from datetime import datetime, timezone
+
 from flask import Blueprint, request, send_file
 from flask_jwt_extended import current_user
 
@@ -16,7 +18,7 @@ from app.models import (
 )
 from app.utils.responses import ok, fail
 from app.utils.decorators import active_required, radiographer_required, radiologist_required
-from app.utils.upload import save_report_image, delete_file_if_exists
+from app.utils.upload import delete_file_if_exists
 
 reports_bp = Blueprint("reports", __name__, url_prefix="/api/reports")
 
@@ -51,6 +53,18 @@ def report_image_url(img: ReportImage):
     return f"/api/reports/{img.report_id}/images/{img.id}/file"
 
 
+def parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
 def can_view_report(r: Report) -> bool:
     if current_user.role == Role.RADIOLOGIST.value:
         return True
@@ -67,17 +81,32 @@ def can_view_report(r: Report) -> bool:
     return False
 
 
+def feedback_response(f: ReportFeedback):
+    u = f.user
+    return {
+        "id": f.id,
+        "report_id": f.report_id,
+        "user_id": f.user_id,
+        "user_name": u.name if u else None,
+        "user_role": u.role if u else None,
+        "message": f.message,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+        "updated_at": f.updated_at.isoformat() if f.updated_at else None,
+    }
+
+
 def report_response(r: Report):
     doctor = User.query.get(r.doctor_id) if r.doctor_id else None
     patient = User.query.get(r.patient_id) if r.patient_id else None
     radiographer = User.query.get(r.radiographer_id) if r.radiographer_id else None
     radiologist = User.query.get(r.radiologist_id) if r.radiologist_id else None
 
-    imgs = ReportImage.query.filter_by(report_id=r.id).order_by(ReportImage.id.asc()).all()
+    report_images = ReportImage.query.filter_by(report_id=r.id).order_by(ReportImage.id.asc()).all()
     feedbacks = ReportFeedback.query.filter_by(report_id=r.id).order_by(ReportFeedback.id.asc()).all()
 
     return {
         "id": r.id,
+        "scan_request_id": r.scan_req_id,
         "scan_req_id": r.scan_req_id,
         "prescription_id": r.prescription_id,
 
@@ -93,21 +122,31 @@ def report_response(r: Report):
         "doctor_id": r.doctor_id,
         "doctor": user_brief(doctor),
 
-        "content": r.content,
+        "scan_type": r.scan_type,
+        "organ": r.organ,
+        "analysis_time_ms": r.analysis_time_ms,
+
         "radiologist_text": r.radiologist_text,
 
+        "summary": r.summary or {},
+        "classification": r.classification or {},
+        "detection": r.detection or {},
+        "segmentation": r.segmentation or {},
+        "images": r.images or {},
+
         "status": r.status,
-        "created_at": r.created_at.isoformat(),
-        "updated_at": r.updated_at.isoformat(),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
 
         "report_images": [
             {
                 "id": img.id,
                 "file_path": img.file_path,
+                "image_type": img.image_type,
                 "url": report_image_url(img),
-                "created_at": img.created_at.isoformat(),
+                "created_at": img.created_at.isoformat() if img.created_at else None,
             }
-            for img in imgs
+            for img in report_images
         ],
 
         "feedbacks": [
@@ -116,18 +155,6 @@ def report_response(r: Report):
         ],
     }
 
-def feedback_response(f: ReportFeedback):
-    u = f.user
-    return {
-        "id": f.id,
-        "report_id": f.report_id,
-        "user_id": f.user_id,
-        "user_name": u.name if u else None,
-        "user_role": u.role if u else None,
-        "message": f.message,
-        "created_at": f.created_at.isoformat(),
-        "updated_at": f.updated_at.isoformat(),
-    }
 
 def can_add_feedback(report: Report) -> bool:
     if not report:
@@ -152,20 +179,20 @@ def can_add_feedback(report: Report) -> bool:
 
     return False
 
+
 # -------------------------
 # CREATE REPORT
 # radiographer only
+# JSON payload
 # -------------------------
 @reports_bp.post("")
 @radiographer_required
 def create_report():
-    form = request.form
+    data = request.get_json(silent=True) or {}
 
-    prescription_id = form.get("prescription_id", type=int)
-    content = (form.get("content") or "").strip()
-
-    if not prescription_id or not content:
-        return fail("prescription_id and content are required.", code=400)
+    prescription_id = data.get("prescription_id")
+    if not prescription_id:
+        return fail("prescription_id is required.", code=400)
 
     prescription = Prescription.query.get(prescription_id)
     if not prescription:
@@ -179,53 +206,60 @@ def create_report():
     if not scanned_images:
         return fail("Scanned images are required before creating a report.", code=400)
 
+    patient_id = data.get("patient_id")
+    radiographer_id = data.get("radiographer_id")
+
+    if patient_id != prescription.patient_id:
+        return fail("patient_id does not match the prescription.", code=400)
+
+    if radiographer_id != current_user.id:
+        return fail("radiographer_id must be the current logged-in radiographer.", code=403)
+
+    if data.get("doctor_id") and prescription.doctor_id and data.get("doctor_id") != prescription.doctor_id:
+        return fail("doctor_id does not match the prescription.", code=400)
+
+    if data.get("radiologist_id") and prescription.radiologist_id and data.get("radiologist_id") != prescription.radiologist_id:
+        return fail("radiologist_id does not match the prescription.", code=400)
+
+    scan_req_id = data.get("scan_request_id") or data.get("scan_req_id") or prescription.scan_req_id
+    if not scan_req_id:
+        return fail("scan_request_id is required.", code=400)
+
     report = Report(
-        scan_req_id=prescription.scan_req_id,
+        scan_req_id=scan_req_id,
         prescription_id=prescription.id,
         patient_id=prescription.patient_id,
         radiographer_id=current_user.id,
         radiologist_id=prescription.radiologist_id,
         doctor_id=prescription.doctor_id,
-        content=content,
-        radiologist_text=None,
-        status=ReportStatus.PENDING.value,
+        scan_type=data.get("scan_type"),
+        organ=data.get("organ"),
+        analysis_time_ms=data.get("analysis_time_ms"),
+        radiologist_text=data.get("radiologist_text"),
+        summary=data.get("summary"),
+        classification=data.get("classification"),
+        detection=data.get("detection"),
+        segmentation=data.get("segmentation"),
+        images=data.get("images"),
+        status=data.get("status", ReportStatus.PENDING.value),
     )
 
-    files = request.files.getlist("report_images")
-    saved_paths = []
+    created_at_value = parse_iso_datetime(data.get("created_at"))
+    if created_at_value:
+        report.created_at = created_at_value
+        report.updated_at = created_at_value
 
     try:
         db.session.add(report)
-        db.session.flush()
-
-        for f in files:
-            if not f or not f.filename:
-                continue
-
-            path = save_report_image(f, "uploads")
-            saved_paths.append(path)
-
-            db.session.add(ReportImage(
-                report_id=report.id,
-                file_path=path
-            ))
 
         # once report exists, prescription becomes reported
         prescription.status = PrescriptionStatus.REPORTED.value
 
         db.session.commit()
 
-    except ValueError as e:
+    except Exception as e:
         db.session.rollback()
-        for path in saved_paths:
-            delete_file_if_exists(path)
-        return fail(str(e), code=400)
-
-    except Exception:
-        db.session.rollback()
-        for path in saved_paths:
-            delete_file_if_exists(path)
-        return fail("Failed to create report.", code=500)
+        return fail(f"Failed to create report. {str(e)}", code=500)
 
     return ok(report_response(report), "Report created", 201)
 
@@ -233,7 +267,6 @@ def create_report():
 # -------------------------
 # UPDATE REPORT
 # radiologist only
-# only radiologist_text
 # -------------------------
 @reports_bp.patch("/<int:report_id>")
 @radiologist_required
@@ -242,16 +275,62 @@ def update_report(report_id: int):
     if not report:
         return fail("Report not found.", code=404)
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
+    if not data:
+        return fail("JSON body is required.", code=400)
 
-    if "radiologist_text" not in data:
-        return fail("Only radiologist_text can be updated.", code=400)
+    allowed_fields = {
+        "scan_request_id",
+        "scan_req_id",
+        "scan_type",
+        "organ",
+        "analysis_time_ms",
+        "radiologist_text",
+        "summary",
+        "classification",
+        "detection",
+        "segmentation",
+        "images",
+        "status",
+    }
 
-    radiologist_text = (data.get("radiologist_text") or "").strip()
-    if not radiologist_text:
-        return fail("radiologist_text is required.", code=400)
+    invalid_fields = [k for k in data.keys() if k not in allowed_fields]
+    if invalid_fields:
+        return fail(f"Invalid fields: {', '.join(invalid_fields)}", code=400)
 
-    report.radiologist_text = radiologist_text
+    if "scan_request_id" in data or "scan_req_id" in data:
+        report.scan_req_id = data.get("scan_request_id") or data.get("scan_req_id")
+
+    if "scan_type" in data:
+        report.scan_type = data.get("scan_type")
+
+    if "organ" in data:
+        report.organ = data.get("organ")
+
+    if "analysis_time_ms" in data:
+        report.analysis_time_ms = data.get("analysis_time_ms")
+
+    if "radiologist_text" in data:
+        report.radiologist_text = data.get("radiologist_text")
+
+    if "summary" in data:
+        report.summary = data.get("summary")
+
+    if "classification" in data:
+        report.classification = data.get("classification")
+
+    if "detection" in data:
+        report.detection = data.get("detection")
+
+    if "segmentation" in data:
+        report.segmentation = data.get("segmentation")
+
+    if "images" in data:
+        report.images = data.get("images")
+
+    if "status" in data:
+        report.status = data.get("status")
+
     report.radiologist_id = current_user.id
 
     db.session.commit()
@@ -263,36 +342,31 @@ def update_report(report_id: int):
 # APPROVE REPORT
 # radiologist only
 # -------------------------
-@reports_bp.post("/<int:report_id>/approve")
+@reports_bp.patch("/<int:report_id>/status")
 @radiologist_required
-def approve_report(report_id: int):
+def update_report_status(report_id: int):
     report = Report.query.get(report_id)
     if not report:
         return fail("Report not found.", code=404)
 
-    report.status = ReportStatus.APPROVED.value
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+
+    allowed_statuses = {
+        ReportStatus.APPROVED.value,
+        ReportStatus.DECLINED.value,
+    }
+
+    if status not in allowed_statuses:
+        return fail("status must be 'approved' or 'declined'.", code=400)
+
+    report.status = status
     report.radiologist_id = current_user.id
+
     db.session.commit()
 
-    return ok(report_response(report), "Report approved")
-
-
-# -------------------------
-# DECLINE REPORT
-# radiologist only
-# -------------------------
-@reports_bp.post("/<int:report_id>/decline")
-@radiologist_required
-def decline_report(report_id: int):
-    report = Report.query.get(report_id)
-    if not report:
-        return fail("Report not found.", code=404)
-
-    report.status = ReportStatus.DECLINED.value
-    report.radiologist_id = current_user.id
-    db.session.commit()
-
-    return ok(report_response(report), "Report declined")
+    message = "Report approved" if status == ReportStatus.APPROVED.value else "Report declined"
+    return ok(report_response(report), message)
 
 
 # -------------------------
@@ -305,6 +379,13 @@ def list_reports():
 
     patient_id = request.args.get("patient_id", type=int)
     doctor_id = request.args.get("doctor_id", type=int)
+    prescription_id = request.args.get("prescription_id", type=int)
+    status = request.args.get("status")
+
+    if prescription_id:
+        q = q.filter(Report.prescription_id == prescription_id)
+    if status:
+        q = q.filter(Report.status == status)
 
     if current_user.role == Role.RADIOLOGIST.value:
         if patient_id:
@@ -317,6 +398,8 @@ def list_reports():
 
     if current_user.role == Role.RADIOGRAPHER.value:
         q = q.filter(Report.radiographer_id == current_user.id)
+        if patient_id:
+            q = q.filter(Report.patient_id == patient_id)
         items = q.order_by(Report.id.desc()).all()
         return ok([report_response(r) for r in items], "My reports list")
 
@@ -325,6 +408,8 @@ def list_reports():
             Report.doctor_id == current_user.id,
             Report.status == ReportStatus.APPROVED.value
         )
+        if patient_id:
+            q = q.filter(Report.patient_id == patient_id)
         items = q.order_by(Report.id.desc()).all()
         return ok([report_response(r) for r in items], "My reports list")
 
@@ -357,6 +442,7 @@ def get_report(report_id: int):
 
 # -------------------------
 # GET REPORT IMAGE FILE
+# optional extra attached file images
 # -------------------------
 @reports_bp.get("/<int:report_id>/images/<int:image_id>/file")
 @active_required
@@ -402,7 +488,7 @@ def delete_report(report_id: int):
     db.session.flush()
 
     remaining = Report.query.filter_by(prescription_id=report.prescription_id).count()
-    if remaining == 0:
+    if remaining == 0 and prescription:
         if scanned_images:
             prescription.status = PrescriptionStatus.SCANNED.value
         else:
@@ -412,10 +498,10 @@ def delete_report(report_id: int):
 
     return ok(None, "Report deleted")
 
+
 # -------------------------
 # ADD REPORT FEEDBACK
 # patient / doctor / radiographer / radiologist
-# according to connected report
 # -------------------------
 @reports_bp.post("/<int:report_id>/feedbacks")
 @active_required
