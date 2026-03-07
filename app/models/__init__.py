@@ -3,3 +3,4 @@ from .prescription import Prescription, PrescriptionImage, PrescriptionStatus
 from .scan_image import ScannedImage, ScanImageStatus
 from .report import Report, ReportImage, ReportStatus
 from .feedback import ReportFeedback
+from .notice import Notice, NoticePriority
