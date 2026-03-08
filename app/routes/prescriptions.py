@@ -1,5 +1,6 @@
 import os
 import re
+
 from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, request, send_file
 from flask_jwt_extended import current_user
@@ -101,7 +102,7 @@ def prescription_response(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
-        "report_id": p.report_id,
+        "report_id": p.report.id if p.report else None,
 
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
@@ -149,7 +150,7 @@ def prescription_summary(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
-        "report_id": p.report_id,
+        "report_id": p.report.id if p.report else None,
 
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
@@ -174,10 +175,6 @@ def prescription_summary(p: Prescription):
     }
 
 
-# -------------------------
-# GLOBAL PRESCRIPTION LIST
-# GET /api/prescriptions
-# -------------------------
 @prescriptions_bp.get("/api/prescriptions")
 @active_required
 def list_prescriptions():
@@ -218,10 +215,6 @@ def list_prescriptions():
     return fail("Access denied.", code=403)
 
 
-# -------------------------
-# LIST UNDER PATIENT
-# GET /api/patients/<patient_id>/prescriptions
-# -------------------------
 @prescriptions_bp.get("/api/patients/<int:patient_id>/prescriptions")
 @active_required
 def list_patient_prescriptions(patient_id: int):
@@ -234,8 +227,7 @@ def list_patient_prescriptions(patient_id: int):
         Role.RADIOGRAPHER.value,
         Role.RADIOLOGIST.value,
     }:
-        items = Prescription.query.filter_by(patient_id=patient_id)\
-            .order_by(Prescription.id.desc()).all()
+        items = Prescription.query.filter_by(patient_id=patient_id).order_by(Prescription.id.desc()).all()
         return ok([prescription_summary(p) for p in items], "Patient prescriptions list")
 
     if current_user.role == Role.DOCTOR.value:
@@ -249,17 +241,12 @@ def list_patient_prescriptions(patient_id: int):
         if current_user.id != patient_id:
             return fail("Access denied.", code=403)
 
-        items = Prescription.query.filter_by(patient_id=current_user.id)\
-            .order_by(Prescription.id.desc()).all()
+        items = Prescription.query.filter_by(patient_id=current_user.id).order_by(Prescription.id.desc()).all()
         return ok([prescription_summary(p) for p in items], "My prescriptions list")
 
     return fail("Access denied.", code=403)
 
 
-# -------------------------
-# CREATE UNDER PATIENT
-# POST /api/patients/<patient_id>/prescriptions
-# -------------------------
 @prescriptions_bp.post("/api/patients/<int:patient_id>/prescriptions")
 @receptionist_or_radiographer_required
 def create_patient_prescription(patient_id: int):
@@ -311,7 +298,6 @@ def create_patient_prescription(patient_id: int):
             doctor_id=doctor_id_int,
             patient_id=patient_id,
             radiologist_id=radiologist_id_int,
-            report_id=None,
             scan_type=scan_type,
             organ=organ,
             description=description,
@@ -342,6 +328,9 @@ def create_patient_prescription(patient_id: int):
 
         except IntegrityError:
             db.session.rollback()
+            for path in saved_paths:
+                delete_file_if_exists(path)
+            saved_paths = []
             continue
 
         except ValueError as e:
@@ -359,10 +348,6 @@ def create_patient_prescription(patient_id: int):
     return fail("Failed to generate unique scan_req_id. Try again.", code=500)
 
 
-# -------------------------
-# ACTIVE DOCTORS LIST
-# GET /api/patients/doctors/active
-# -------------------------
 @prescriptions_bp.get("/api/patients/doctors/active")
 @admin_or_receptionist_required
 def list_active_doctors_dropdown():
@@ -383,10 +368,6 @@ def list_active_doctors_dropdown():
     return ok(data, "Active doctors list")
 
 
-# -------------------------
-# ACTIVE RADIOLOGISTS LIST
-# access: admin + receptionist
-# -------------------------
 @prescriptions_bp.get("/api/patients/radiologists/active")
 @admin_or_receptionist_required
 def list_active_radiologists_dropdown():
@@ -407,10 +388,6 @@ def list_active_radiologists_dropdown():
     return ok(data, "Active radiologists list")
 
 
-# -------------------------
-# GET BY ID
-# GET /api/prescriptions/<prescription_id>
-# -------------------------
 @prescriptions_bp.get("/api/prescriptions/<int:prescription_id>")
 @active_required
 def get_prescription(prescription_id: int):
@@ -424,10 +401,6 @@ def get_prescription(prescription_id: int):
     return ok(prescription_response(p), "Prescription details")
 
 
-# -------------------------
-# GET SINGLE IMAGE
-# GET /api/prescriptions/<prescription_id>/images/<image_id>
-# -------------------------
 @prescriptions_bp.get("/api/prescriptions/<int:prescription_id>/images/<int:image_id>")
 @active_required
 def get_prescription_image(prescription_id: int, image_id: int):
@@ -449,10 +422,6 @@ def get_prescription_image(prescription_id: int, image_id: int):
     return send_file(abs_path)
 
 
-# -------------------------
-# UPDATE
-# PATCH /api/prescriptions/<prescription_id>
-# -------------------------
 @prescriptions_bp.patch("/api/prescriptions/<int:prescription_id>")
 @receptionist_or_radiographer_required
 def update_prescription(prescription_id: int):
@@ -558,10 +527,6 @@ def update_prescription(prescription_id: int):
     return ok(prescription_response(p), "Prescription updated")
 
 
-# -------------------------
-# DELETE
-# DELETE /api/prescriptions/<prescription_id>
-# -------------------------
 @prescriptions_bp.delete("/api/prescriptions/<int:prescription_id>")
 @admin_required
 def delete_prescription(prescription_id: int):

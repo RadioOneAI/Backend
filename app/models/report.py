@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timezone
 from enum import Enum
 
 from app.extensions import db
@@ -32,7 +32,6 @@ class Report(db.Model):
     radiographer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     radiologist_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     doctor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    report_id = db.Column(db.Integer, db.ForeignKey("reports.id"), nullable=True, unique=True)
 
     scan_type = db.Column(db.String(50), nullable=True)
     organ = db.Column(db.String(100), nullable=True)
@@ -50,6 +49,12 @@ class Report(db.Model):
         db.String(30),
         nullable=False,
         default=ReportStatus.PENDING.value,
+    )
+
+    prescription = db.relationship(
+        "Prescription",
+        back_populates="report",
+        lazy=True,
     )
 
     report_images = db.relationship(

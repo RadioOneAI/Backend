@@ -159,7 +159,7 @@ def can_add_feedback(report: Report) -> bool:
     if not report:
         return False
 
-    prescription = Prescription.query.get(report.prescription_id) if report.prescription_id else None
+    prescription = report.prescription
 
     if current_user.role == Role.PATIENT.value:
         return report.patient_id == current_user.id
@@ -179,11 +179,6 @@ def can_add_feedback(report: Report) -> bool:
     return False
 
 
-# -------------------------
-# CREATE REPORT
-# radiographer only
-# JSON payload
-# -------------------------
 @reports_bp.post("")
 @radiographer_required
 def create_report():
@@ -197,7 +192,7 @@ def create_report():
     if not prescription:
         return fail("Prescription not found.", code=404)
 
-    if prescription.report_id:
+    if prescription.report:
         return fail("Report already exists for this prescription.", code=409)
 
     existing = Report.query.filter_by(prescription_id=prescription_id).first()
@@ -225,13 +220,13 @@ def create_report():
 
     report = Report(
         scan_req_id=scan_req_id,
-        prescription_id=prescription.id,
+        prescription=prescription,
         patient_id=prescription.patient_id,
         radiographer_id=current_user.id,
         radiologist_id=prescription.radiologist_id,
         doctor_id=prescription.doctor_id,
-        scan_type=data.get("scan_type"),
-        organ=data.get("organ"),
+        scan_type=data.get("scan_type") or prescription.scan_type,
+        organ=data.get("organ") or prescription.organ,
         analysis_time_ms=data.get("analysis_time_ms"),
         radiologist_text=data.get("radiologist_text"),
         summary=data.get("summary"),
@@ -249,9 +244,7 @@ def create_report():
 
     try:
         db.session.add(report)
-        db.session.flush()
 
-        prescription.report_id = report.id
         prescription.status = PrescriptionStatus.REPORTED.value
 
         db.session.commit()
@@ -263,10 +256,6 @@ def create_report():
     return ok(report_response(report), "Report created", 201)
 
 
-# -------------------------
-# UPDATE REPORT
-# radiologist only
-# -------------------------
 @reports_bp.patch("/<int:report_id>")
 @radiologist_required
 def update_report(report_id: int):
@@ -337,10 +326,6 @@ def update_report(report_id: int):
     return ok(report_response(report), "Report updated")
 
 
-# -------------------------
-# UPDATE REPORT STATUS
-# radiologist only
-# -------------------------
 @reports_bp.patch("/<int:report_id>/status")
 @radiologist_required
 def update_report_status(report_id: int):
@@ -368,9 +353,6 @@ def update_report_status(report_id: int):
     return ok(report_response(report), message)
 
 
-# -------------------------
-# LIST REPORTS
-# -------------------------
 @reports_bp.get("")
 @active_required
 def list_reports():
@@ -420,9 +402,6 @@ def list_reports():
     return fail("Access denied.", code=403)
 
 
-# -------------------------
-# GET SINGLE REPORT
-# -------------------------
 @reports_bp.get("/<int:report_id>")
 @active_required
 def get_report(report_id: int):
@@ -436,10 +415,6 @@ def get_report(report_id: int):
     return ok(report_response(report), "Report details")
 
 
-# -------------------------
-# GET REPORT IMAGE FILE
-# optional extra attached file images
-# -------------------------
 @reports_bp.get("/<int:report_id>/images/<int:image_id>/file")
 @active_required
 def get_report_image_file(report_id: int, image_id: int):
@@ -461,10 +436,6 @@ def get_report_image_file(report_id: int, image_id: int):
     return send_file(abs_path)
 
 
-# -------------------------
-# DELETE REPORT
-# radiologist only
-# -------------------------
 @reports_bp.delete("/<int:report_id>")
 @radiologist_required
 def delete_report(report_id: int):
@@ -472,7 +443,7 @@ def delete_report(report_id: int):
     if not report:
         return fail("Report not found.", code=404)
 
-    prescription = Prescription.query.get(report.prescription_id)
+    prescription = report.prescription
 
     imgs = ReportImage.query.filter_by(report_id=report.id).all()
     for img in imgs:
@@ -480,7 +451,6 @@ def delete_report(report_id: int):
         db.session.delete(img)
 
     if prescription:
-        prescription.report_id = None
         prescription.status = PrescriptionStatus.PENDING.value
 
     db.session.delete(report)
@@ -489,10 +459,6 @@ def delete_report(report_id: int):
     return ok(None, "Report deleted")
 
 
-# -------------------------
-# ADD REPORT FEEDBACK
-# patient / doctor / radiographer / radiologist
-# -------------------------
 @reports_bp.post("/<int:report_id>/feedbacks")
 @active_required
 def add_report_feedback(report_id: int):
@@ -521,9 +487,6 @@ def add_report_feedback(report_id: int):
     return ok(feedback_response(feedback), "Feedback added", 201)
 
 
-# -------------------------
-# LIST REPORT FEEDBACKS
-# -------------------------
 @reports_bp.get("/<int:report_id>/feedbacks")
 @active_required
 def list_report_feedbacks(report_id: int):
@@ -538,9 +501,6 @@ def list_report_feedbacks(report_id: int):
     return ok([feedback_response(f) for f in items], "Report feedbacks")
 
 
-# -------------------------
-# GET REPORT BY PRESCRIPTION ID
-# -------------------------
 @reports_bp.get("/prescription/<int:prescription_id>")
 @active_required
 def get_report_by_prescription_id(prescription_id: int):
@@ -548,13 +508,7 @@ def get_report_by_prescription_id(prescription_id: int):
     if not prescription:
         return fail("Prescription not found.", code=404)
 
-    report = None
-
-    if prescription.report_id:
-        report = Report.query.get(prescription.report_id)
-
-    if not report:
-        report = Report.query.filter_by(prescription_id=prescription_id).first()
+    report = prescription.report
 
     if not report:
         return fail("Report not found for this prescription.", code=404)
@@ -565,9 +519,6 @@ def get_report_by_prescription_id(prescription_id: int):
     return ok(report_response(report), "Report details")
 
 
-# -------------------------
-# UPDATE OWN FEEDBACK
-# -------------------------
 @reports_bp.patch("/<int:report_id>/feedbacks/<int:feedback_id>")
 @active_required
 def update_report_feedback(report_id: int, feedback_id: int):
@@ -597,9 +548,6 @@ def update_report_feedback(report_id: int, feedback_id: int):
     return ok(feedback_response(feedback), "Feedback updated")
 
 
-# -------------------------
-# DELETE OWN FEEDBACK
-# -------------------------
 @reports_bp.delete("/<int:report_id>/feedbacks/<int:feedback_id>")
 @active_required
 def delete_report_feedback(report_id: int, feedback_id: int):

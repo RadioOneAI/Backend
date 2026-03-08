@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+
 from app.extensions import db
 
 
@@ -22,16 +23,38 @@ class Prescription(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
-    report_id = db.Column(db.Integer, db.ForeignKey("reports.id"), nullable=True, unique=True)
-
     scan_type = db.Column(db.String(80), nullable=False)
     organ = db.Column(db.String(80), nullable=False)
     description = db.Column(db.Text, nullable=True)
 
-    status = db.Column(db.String(30), nullable=False, default=PrescriptionStatus.PENDING.value)
+    status = db.Column(
+        db.String(30),
+        nullable=False,
+        default=PrescriptionStatus.PENDING.value,
+    )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    # one-to-one: one prescription can have one report
+    report = db.relationship(
+        "Report",
+        back_populates="prescription",
+        uselist=False,
+        lazy=True,
+    )
+
+    prescription_images = db.relationship(
+        "PrescriptionImage",
+        backref="prescription",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
 
 
 class PrescriptionImage(db.Model):
@@ -40,7 +63,7 @@ class PrescriptionImage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     prescription_id = db.Column(db.Integer, db.ForeignKey("prescriptions.id"), nullable=False)
 
-    file_path = db.Column(db.String(255), nullable=False)  # uploads/prescriptions/<uuid>.png
+    file_path = db.Column(db.String(255), nullable=False)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
