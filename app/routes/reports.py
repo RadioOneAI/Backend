@@ -12,7 +12,6 @@ from app.models import (
     ReportFeedback,
     Prescription,
     PrescriptionStatus,
-    ScannedImage,
     User,
     Role,
 )
@@ -470,7 +469,6 @@ def delete_report(report_id: int):
         return fail("Report not found.", code=404)
 
     prescription = Prescription.query.get(report.prescription_id)
-    scanned_images = ScannedImage.query.filter_by(prescription_id=report.prescription_id).all()
 
     imgs = ReportImage.query.filter_by(report_id=report.id).all()
     for img in imgs:
@@ -479,13 +477,6 @@ def delete_report(report_id: int):
 
     db.session.delete(report)
     db.session.flush()
-
-    remaining = Report.query.filter_by(prescription_id=report.prescription_id).count()
-    if remaining == 0 and prescription:
-        if scanned_images:
-            prescription.status = PrescriptionStatus.SCANNED.value
-        else:
-            prescription.status = PrescriptionStatus.PENDING.value
 
     db.session.commit()
 
