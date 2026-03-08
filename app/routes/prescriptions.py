@@ -101,6 +101,7 @@ def prescription_response(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+        "report_id": p.report_id,
 
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
@@ -148,6 +149,7 @@ def prescription_summary(p: Prescription):
     return {
         "id": p.id,
         "scan_req_id": p.scan_req_id,
+        "report_id": p.report_id,
 
         "doctor_id": p.doctor_id,
         "doctor": user_brief(doctor),
@@ -309,6 +311,7 @@ def create_patient_prescription(patient_id: int):
             doctor_id=doctor_id_int,
             patient_id=patient_id,
             radiologist_id=radiologist_id_int,
+            report_id=None,
             scan_type=scan_type,
             organ=organ,
             description=description,
@@ -378,6 +381,7 @@ def list_active_doctors_dropdown():
     ]
 
     return ok(data, "Active doctors list")
+
 
 # -------------------------
 # ACTIVE RADIOLOGISTS LIST

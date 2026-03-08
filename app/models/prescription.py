@@ -22,6 +22,8 @@ class Prescription(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
+    report_id = db.Column(db.Integer, db.ForeignKey("reports.id"), nullable=True, unique=True)
+
     scan_type = db.Column(db.String(80), nullable=False)
     organ = db.Column(db.String(80), nullable=False)
     description = db.Column(db.Text, nullable=True)

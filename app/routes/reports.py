@@ -197,6 +197,9 @@ def create_report():
     if not prescription:
         return fail("Prescription not found.", code=404)
 
+    if prescription.report_id:
+        return fail("Report already exists for this prescription.", code=409)
+
     existing = Report.query.filter_by(prescription_id=prescription_id).first()
     if existing:
         return fail("Report already exists for this prescription.", code=409)
@@ -246,7 +249,11 @@ def create_report():
 
     try:
         db.session.add(report)
+        db.session.flush()
+
+        prescription.report_id = report.id
         prescription.status = PrescriptionStatus.REPORTED.value
+
         db.session.commit()
 
     except Exception as e:
@@ -331,7 +338,7 @@ def update_report(report_id: int):
 
 
 # -------------------------
-# APPROVE REPORT
+# UPDATE REPORT STATUS
 # radiologist only
 # -------------------------
 @reports_bp.patch("/<int:report_id>/status")
@@ -396,10 +403,7 @@ def list_reports():
         return ok([report_response(r) for r in items], "My reports list")
 
     if current_user.role == Role.DOCTOR.value:
-        q = q.filter(
-            Report.doctor_id == current_user.id,
-            Report.status == ReportStatus.APPROVED.value
-        )
+        q = q.filter(Report.doctor_id == current_user.id)
         if patient_id:
             q = q.filter(Report.patient_id == patient_id)
         items = q.order_by(Report.id.desc()).all()
@@ -475,9 +479,11 @@ def delete_report(report_id: int):
         delete_file_if_exists(img.file_path)
         db.session.delete(img)
 
-    db.session.delete(report)
-    db.session.flush()
+    if prescription:
+        prescription.report_id = None
+        prescription.status = PrescriptionStatus.PENDING.value
 
+    db.session.delete(report)
     db.session.commit()
 
     return ok(None, "Report deleted")
@@ -531,13 +537,25 @@ def list_report_feedbacks(report_id: int):
     items = ReportFeedback.query.filter_by(report_id=report.id).order_by(ReportFeedback.id.asc()).all()
     return ok([feedback_response(f) for f in items], "Report feedbacks")
 
+
 # -------------------------
 # GET REPORT BY PRESCRIPTION ID
 # -------------------------
 @reports_bp.get("/prescription/<int:prescription_id>")
 @active_required
 def get_report_by_prescription_id(prescription_id: int):
-    report = Report.query.filter_by(prescription_id=prescription_id).first()
+    prescription = Prescription.query.get(prescription_id)
+    if not prescription:
+        return fail("Prescription not found.", code=404)
+
+    report = None
+
+    if prescription.report_id:
+        report = Report.query.get(prescription.report_id)
+
+    if not report:
+        report = Report.query.filter_by(prescription_id=prescription_id).first()
+
     if not report:
         return fail("Report not found for this prescription.", code=404)
 
