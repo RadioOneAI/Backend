@@ -72,7 +72,7 @@ def can_view_report(r: Report) -> bool:
         return True
 
     if current_user.role == Role.DOCTOR.value:
-        return r.doctor_id == current_user.id and r.status == ReportStatus.APPROVED.value
+        return r.doctor_id == current_user.id
 
     if current_user.role == Role.PATIENT.value:
         return r.patient_id == current_user.id and r.status == ReportStatus.APPROVED.value
@@ -530,6 +530,21 @@ def list_report_feedbacks(report_id: int):
 
     items = ReportFeedback.query.filter_by(report_id=report.id).order_by(ReportFeedback.id.asc()).all()
     return ok([feedback_response(f) for f in items], "Report feedbacks")
+
+# -------------------------
+# GET REPORT BY PRESCRIPTION ID
+# -------------------------
+@reports_bp.get("/prescription/<int:prescription_id>")
+@active_required
+def get_report_by_prescription_id(prescription_id: int):
+    report = Report.query.filter_by(prescription_id=prescription_id).first()
+    if not report:
+        return fail("Report not found for this prescription.", code=404)
+
+    if not can_view_report(report):
+        return fail("Access denied.", code=403)
+
+    return ok(report_response(report), "Report details")
 
 
 # -------------------------
