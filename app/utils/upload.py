@@ -34,3 +34,41 @@ def delete_file_if_exists(file_path: str):
             os.remove(abs_path)
         except Exception:
             pass  # optional: log
+
+def save_scanned_image(file_storage, base_upload_folder: str) -> str:
+    filename = secure_filename(file_storage.filename or "")
+    if not filename:
+        raise ValueError("No file name.")
+
+    if not allowed_file(filename):
+        raise ValueError("Invalid file type. Allowed: png, jpg, jpeg, webp.")
+
+    ext = filename.rsplit(".", 1)[1].lower()
+    new_name = f"{uuid.uuid4().hex}.{ext}"
+
+    folder = os.path.join(base_upload_folder, "scanned_images")
+    os.makedirs(folder, exist_ok=True)
+
+    abs_path = os.path.join(folder, new_name)
+    file_storage.save(abs_path)
+
+    return os.path.join(base_upload_folder, "scanned_images", new_name).replace("\\", "/")
+
+def save_report_image(file_storage, base_upload_folder: str) -> str:
+    filename = secure_filename(file_storage.filename or "")
+    if not filename:
+        raise ValueError("No file name.")
+
+    if not allowed_file(filename):
+        raise ValueError("Invalid file type. Allowed: png, jpg, jpeg, webp.")
+
+    ext = filename.rsplit(".", 1)[1].lower()
+    new_name = f"{uuid.uuid4().hex}.{ext}"
+
+    folder = os.path.join(base_upload_folder, "reports")
+    os.makedirs(folder, exist_ok=True)
+
+    abs_path = os.path.join(folder, new_name)
+    file_storage.save(abs_path)
+
+    return os.path.join(base_upload_folder, "reports", new_name).replace("\\", "/")
